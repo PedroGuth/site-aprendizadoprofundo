@@ -2,7 +2,6 @@
 
 Este projeto é uma ferramenta educacional interativa para construção e treinamento de redes neurais diretamente no navegador. Com foco visual e didático, você pode montar redes personalizadas, treinar com dados clássicos e visualizar o comportamento interno da rede em tempo real.
 
-![screenshot](./screenshot.png) <!-- Adicione uma imagem se quiser -->
 
 ---
 
