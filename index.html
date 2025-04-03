@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Rede Neural Interativa</title>
+    <link rel="stylesheet" type="text/css" href="https://s3.us-east-1.amazonaws.com/redeneural.pedroguth/style.css">.
+</head>
+<body>
+<h1 style="font-size: 32px; color: #2563eb; margin-bottom: 10px;">
+  🧠 Rede Neural Interativa
+</h1>
+<p style="font-size: 16px; color: #666;">Construa, visualize e aprenda com sua própria rede neural</p>
+
+
+<!-- Card de Configuração -->
+<div class="card">
+  <h3>⚙️ Configurações da Rede (Instruções lá em baixo)</h3>
+  <div id="network-controls" class="controls">
+    <!-- Controles dinâmicos serão renderizados aqui -->
+  </div>
+</div>
+
+
+<!-- 🧪 Resultados da Validação -->
+<div class="card">
+  <h3>🧪 Dataset usado (Só preencher as colunas de Input e Esperado)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Input 1</th>
+        <th>Input 2</th>
+        <th>Esperado</th>
+        <th>Obtido</th>
+        <th>Diferença</th>
+      </tr>
+    </thead>
+    <tbody id="results-body"></tbody>
+  </table>
+
+  <div style="margin-top: 10px;">
+    <button onclick="addValidationRow()">➕ Linha</button>
+    <button onclick="removeValidationRow()">➖ Linha</button>
+  </div>
+
+  <div style="margin-top: 10px;">
+    <button id="validate-btn" onclick="updateValidationResults()">Validar Rede</button>
+    <button onclick="trainNetwork()">🔄 Treinar Rede</button>
+    <button onclick="trainOneEpoch()">🔁 Treinar 1 Época</button>
+    <button onclick="toggleSlowTraining()">🐢 Treinar Devagar</button>
+  </div>
+
+  <p id="training-status">⏸ Aguardando treinamento... (Sugiro clicar em Treinar Devagar)</p>
+</div>
+
+<!-- 📂 Datasets Comuns -->
+<div class="card">
+  <h3>📂 Datasets Comuns</h3>
+  <div class="dataset-buttons">
+    <button onclick="loadDataset('xor')">XOR</button>
+    <button onclick="loadDataset('and')">AND</button>
+    <button onclick="loadDataset('or')">OR</button>
+    <button onclick="loadDataset('nor')">NOR</button>
+    <button onclick="loadDataset('nand')">NAND</button>
+    <button onclick="loadDataset('xnor')">XNOR</button>
+    <button onclick="loadDataset('majority')">Majority</button>
+    <button onclick="loadDataset('sum')">Soma</button>
+    <button onclick="loadDataset('step')">Step</button>
+  </div>
+</div>
+
+<!-- Card do Canvas -->
+<div class="card">
+  <h3>🖼️ Visualização da Rede</h3>
+  <canvas id="networkCanvas"></canvas>
+</div>
+
+<!-- Tooltip para mouseover -->
+
+<div id="tooltip" style="
+  position: absolute;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: none;
+  pointer-events: none;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+"></div>
+
+<!-- Gráfico sozinho -->
+<div class="card">
+  <h3>📊 Erro Médio por Época (Quanto menor, melhor)</h3>
+  <canvas id="costChart" width="600" height="200"></canvas>
+</div>
+
+<div class="card" id="explicacao">
+  <h3>ℹ️ Como usar esta ferramenta</h3>
+  <p style="font-size: 16px; line-height: 1.6; color: #444;">
+    Esta plataforma permite que você construa e treine uma <strong>rede neural artificial</strong> de forma interativa.
+    <br><br>
+    ✅ <strong>Configure a rede</strong> ajustando o número de camadas, neurônios e funções de ativação.<br>
+    ✅ <strong>Visualize os pesos e ativações</strong> diretamente na rede.<br>
+    ✅ <strong>Escolha um dataset</strong> pronto (como XOR ou AND) ou insira seus próprios dados.<br>
+    ✅ <strong>Treine a rede</strong> manualmente ou em múltiplas épocas e observe o erro médio.<br><br>
+    Acompanhe a evolução da rede em tempo real e entenda melhor como funciona o aprendizado de máquina!
+  </p>
+</div>
+
+<footer style="margin-top: 40px; padding: 20px; text-align: center; font-size: 14px; color: var(--text); opacity: 0.8;">
+  <p>Feito com 💻 (leia-se ChatGPT) por <strong>Pedro Guth</strong></p>
+  <div style="margin-top: 10px;">
+    <a href="https://www.linkedin.com/in/pedroguth/" target="_blank" style="margin: 0 10px; color: var(--primary); text-decoration: none;">
+      🔗 LinkedIn
+    </a>
+    <a href="https://github.com/PedroGuth" target="_blank" style="margin: 0 10px; color: var(--primary); text-decoration: none;">
+      🐙 GitHub
+    </a>
+  </div>
+</footer>
+
+</div>
+
+<script>
+let costChart;
+let costHistory = [];
+let validationRowCount = 4; // começa com 4 linhas por padrão
+let currentEpoch = 0;
+let slowTraining = false;
+let epochInterval;
+let network = {
+    layers: [
+        { neurons: 2, activation: 'none' },
+        { neurons: 2, activation: 'sigmoid' },
+        { neurons: 2, activation: 'sigmoid' },
+        { neurons: 1, activation: 'sigmoid' },
+    ],
+    weights: [],
+    biases: [],
+};
+let interactions = [] 
+
+function random() {
+    return Math.random() - 0.5;
+}
+
+function initNetwork(skipTableUpdate = false) {
+  network.weights = [];
+  network.biases = [];
+
+  for (let i = 1; i < network.layers.length; i++) {
+    network.weights.push(
+      Array(network.layers[i].neurons).fill().map(() =>
+        Array(network.layers[i - 1].neurons).fill().map(random))
+    );
+    network.biases.push(Array(network.layers[i].neurons).fill().map(random));
+  }
+
+  renderControls();
+  drawNetwork();
+  if (!skipTableUpdate) updateValidationTable();      // ✅ só atualiza se permitido
+  updateValidationResults();
+  costHistory = [];
+  setupCostChart();
+}
+
+
+function addNeuron(layerIdx) {
+  network.layers[layerIdx].neurons++;
+  initNetwork();
+  if (layerIdx === 0) updateValidationTable();
+}
+
+function addLayer(layerIdx) {
+    network.layers.splice(layerIdx+1, 0, {neurons: 1, activation: 'sigmoid'});
+    initNetwork();
+}
+
+function changeActivation(layerIdx, activation) {
+    network.layers[layerIdx].activation = activation;
+    drawNetwork();
+}
+
+function renderControls() {
+  const div = document.getElementById('network-controls');
+  div.innerHTML = '';
+
+  network.layers.forEach((layer, i) => {
+    let canvasId = `actChart-${i}`;
+    div.innerHTML += `
+      <div class="layer-card">
+        <canvas id="${canvasId}" width="150" height="100"></canvas>
+        <div class="layer-buttons">
+          <button class="add" onclick="addNeuron(${i})">➕ Neuron</button>
+          <button class="remove" onclick="removeNeuron(${i})">➖Neuron</button>
+          <button class="add" onclick="addLayer(${i})">➕ Layer</button>
+          <button class="remove" onclick="removeLayer(${i})">➖Layer</button>
+        </div>
+        <label>Função:
+          <select onchange="changeActivation(${i}, this.value)">
+            <option value="sigmoid" ${layer.activation == 'sigmoid' ? 'selected' : ''}>Sigmoid</option>
+            <option value="relu" ${layer.activation == 'relu' ? 'selected' : ''}>ReLU</option>
+            <option value="tanh" ${layer.activation == 'tanh' ? 'selected' : ''}>tanh</option>
+            <option value="none" ${layer.activation == 'none' ? 'selected' : ''}>none</option>
+          </select>
+        </label>
+      </div>
+    `;
+  });
+
+  network.layers.forEach((layer, i) => {
+    if (i === 0) return;
+    const z = layer.z || [];
+    const a = layer.a || [];
+    drawActivationChart(`actChart-${i}`, layer.activation, z, a);
+  });
+}
+
+
+function drawActivationChart(canvasId, activation, zVals = [], aVals = []) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext("2d");
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height / 2);
+
+  // curva da função
+  for (let x = -50; x <= 50; x++) {
+    const input = x / 10;
+    let y;
+
+    switch (activation) {
+      case 'sigmoid':
+        y = 1 / (1 + Math.exp(-input));
+        break;
+      case 'tanh':
+        y = Math.tanh(input);
+        break;
+      case 'relu':
+        y = Math.max(0, input);
+        break;
+      default:
+        y = input;
+    }
+
+    const cx = (input + 5) * 15;
+    const cy = canvas.height - y * 40 - canvas.height / 2;
+
+    if (x === -50) {
+      ctx.moveTo(cx, cy);
+    } else {
+      ctx.lineTo(cx, cy);
+    }
+  }
+
+  ctx.strokeStyle = '#0077cc';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // eixos
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height / 2);
+  ctx.lineTo(canvas.width, canvas.height / 2);
+  ctx.moveTo(canvas.width / 2, 0);
+  ctx.lineTo(canvas.width / 2, canvas.height);
+  ctx.strokeStyle = '#ccc';
+  ctx.stroke();
+
+  // pontos reais
+  if (zVals.length === aVals.length) {
+    ctx.fillStyle = 'red';
+    zVals.forEach((z, i) => {
+      const a = aVals[i];
+      const px = (z + 5) * 15;
+      const py = canvas.height - a * 40 - canvas.height / 2;
+
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  }
+}
+
+function activationFunc(value, type) {
+    switch(type) {
+        case 'sigmoid': return 1/(1+Math.exp(-value));
+        case 'relu': return Math.max(0,value);
+        case 'tanh': return Math.tanh(value);
+        default: return value;
+    }
+}
+
+function drawNetwork() {
+  const canvas = document.getElementById('networkCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // Dimensões dinâmicas
+  const layerCount = network.layers.length;
+  const maxNeurons = Math.max(...network.layers.map(l => l.neurons));
+
+  const horizontalSpacing = 250;
+  const verticalSpacing = 70;
+  const padding = 100;
+
+  const canvasWidth = padding * 2 + (layerCount - 1) * horizontalSpacing;
+  const canvasHeight = padding * 2 + (maxNeurons - 1) * verticalSpacing;
+
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const positions = [];
+  interactions = [];
+
+  // Desenhar grid de fundo
+  ctx.strokeStyle = "#f0f0f0";
+  for (let x = 0; x < canvasWidth; x += 50) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvasHeight);
+    ctx.stroke();
+  }
+  for (let y = 0; y < canvasHeight; y += 50) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvasWidth, y);
+    ctx.stroke();
+  }
+
+
+  network.layers.forEach((layer, layerIdx) => {
+    positions.push([]);
+    for (let n = 0; n < layer.neurons; n++) {
+      const x = 150 + layerIdx * 250;
+      const y = 100 + n * 70;
+      positions[layerIdx].push({ x, y });
+
+      // valor de ativação (a) para cor
+      let a = layer.a?.[n];
+      let fillColor = "#eee";
+      if (typeof a === "number") {
+        const intensity = Math.floor(a * 255);
+        fillColor = `rgb(${255 - intensity}, ${255 - intensity}, 255)`;
+      }
+
+      // desenha neurônio
+      ctx.beginPath();
+      ctx.arc(x, y, 20, 0, 2 * Math.PI);
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+      ctx.strokeStyle = "#333";
+      ctx.stroke();
+
+      ctx.font = '10px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000';
+
+      if (layerIdx > 0 && layer.z && layer.a) {
+        const z = layer.z[n]?.toFixed(2);
+        const act = layer.a[n]?.toFixed(2);
+        ctx.fillText(`z=${z}`, x, y - 25);
+        ctx.fillText(`a=${act}`, x, y + 35);
+      }
+
+      ctx.fillText(`N${n + 1}`, x, y + 5);
+
+      // interação do neurônio
+      const bias = layerIdx > 0 ? network.biases[layerIdx - 1][n] : null;
+      interactions.push({
+        type: "neuron",
+        x, y, radius: 20, z: layer.z?.[n], a: layer.a?.[n], bias
+      });
+    }
+  });
+
+  for (let l = 1; l < positions.length; l++) {
+    positions[l].forEach((neuron, posN) => {
+      positions[l - 1].forEach((prev, posP) => {
+        const weight = network.weights[l - 1][posN][posP];
+
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(neuron.x, neuron.y);
+        const thickness = Math.min(8, Math.max(1, Math.abs(weight) * 4));
+        ctx.lineWidth = thickness;
+        ctx.strokeStyle = weight >= 0 ? '#0000cc' : '#cc0000';
+        ctx.stroke();
+
+        const wx = (prev.x + neuron.x) / 2;
+        const wy = (prev.y + neuron.y) / 2;
+        ctx.fillStyle = '#555';
+        ctx.fillText(`W=${weight.toFixed(2)}`, wx, wy);
+
+        // interação da conexão
+        interactions.push({
+          type: "weight",
+          x1: prev.x, y1: prev.y, x2: neuron.x, y2: neuron.y, weight
+        });
+      });
+
+      const bias = network.biases[l - 1][posN].toFixed(2);
+      ctx.fillStyle = '#aa0000';
+      ctx.fillText(`B=${bias}`, neuron.x + 30, neuron.y);
+    });
+  }
+}
+
+const validationData = [
+    {input:[0,0], expected:[0]},
+    {input:[0,1], expected:[1]},
+    {input:[1,0], expected:[1]},
+    {input:[1,1], expected:[0]},
+];
+
+function forward(input) {
+  if (input.length !== network.layers[0].neurons) {
+    alert("Erro: O número de entradas não corresponde ao número de neurônios na camada inicial.");
+    return [NaN];
+  }
+
+  let activations = input;
+  network.layers.forEach((layer, idx) => {
+    if (idx === 0) return;
+    const prevActivations = activations;
+    activations = [];
+    layer.z = [];
+    layer.a = [];
+
+    for (let n = 0; n < layer.neurons; n++) {
+      let sum = network.biases[idx - 1][n];
+      for (let p = 0; p < network.layers[idx - 1].neurons; p++) {
+        sum += network.weights[idx - 1][n][p] * prevActivations[p];
+      }
+      layer.z.push(sum);
+      layer.a.push(activationFunc(sum, layer.activation));
+    }
+    activations = layer.a;
+  });
+
+  return activations;
+  drawNetwork();
+  updateValidationResults();
+  renderControls(); // agora atualiza os pontos nos gráficos também
+}
+
+function removeNeuron(layerIdx) {
+  if (network.layers[layerIdx].neurons > 1) {
+    network.layers[layerIdx].neurons--;
+    initNetwork();
+    if (layerIdx === 0) updateValidationTable();
+  } else {
+    alert("Cada camada deve ter pelo menos 1 neurônio.");
+  }
+}
+
+function removeLayer(layerIdx) {
+  if(network.layers.length > 2){ // garantir pelo menos input e output
+    network.layers.splice(layerIdx,1);
+    initNetwork();
+  } else {
+    alert("A rede precisa ter no mínimo 2 camadas (input e output).");
+  }
+}
+
+function updateValidationTable() {
+  const inputLayerSize = network.layers[0].neurons;
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+
+  for (let i = 0; i < validationRowCount; i++) {
+    let row = '<tr>';
+
+    // Inputs
+    for (let j = 0; j < inputLayerSize; j++) {
+      row += `<td contenteditable="true">0</td>`;
+    }
+
+    // Esperado, Obtido e Diferença
+    row += `<td contenteditable="true">0</td><td>-</td><td>-</td></tr>`;
+    tbody.innerHTML += row;
+  }
+}
+
+function trainOneEpoch(learningRate = 0.5) {
+  const tbody = document.getElementById('results-body');
+  const rows = tbody.querySelectorAll('tr');
+  const inputSize = network.layers[0].neurons;
+
+  let totalError = 0;
+
+  rows.forEach((row, rowIdx) => {
+    const cells = row.querySelectorAll('td');
+    const inputs = [];
+    for (let i = 0; i < inputSize; i++) {
+      inputs.push(parseFloat(cells[i].innerText));
+    }
+    const expected = [parseFloat(cells[inputSize].innerText)];
+
+    // FORWARD
+    forward(inputs);
+
+    // BACKPROPAGATION
+    let errors = [];
+    for (let l = network.layers.length - 1; l > 0; l--) {
+      let layer = network.layers[l];
+      let prevLayerOutputs = network.layers[l - 1].a || inputs;
+      let currentErrors = [];
+
+      for (let n = 0; n < layer.neurons; n++) {
+        const output = layer.a[n];
+        const z = layer.z[n];
+        let delta;
+
+        if (l === network.layers.length - 1) {
+          delta = (expected[n] - output) * activationDerivative(z, layer.activation);
+        } else {
+          let sum = 0;
+          for (let k = 0; k < network.layers[l + 1].neurons; k++) {
+            sum += errors[k] * network.weights[l][k][n];
+          }
+          delta = sum * activationDerivative(z, layer.activation);
+        }
+
+        currentErrors[n] = delta;
+
+        // Atualiza bias
+        network.biases[l - 1][n] += learningRate * delta;
+
+        // Atualiza pesos
+        for (let p = 0; p < prevLayerOutputs.length; p++) {
+          network.weights[l - 1][n][p] += learningRate * delta * prevLayerOutputs[p];
+        }
+      }
+      errors = currentErrors;
+    }
+
+    // Calcular erro da amostra
+    const output = forward(inputs)[0];
+    const sampleError = Math.pow(expected[0] - output, 2);
+    totalError += sampleError;
+
+    updateTrainingStatus(currentEpoch + 1, rowIdx + 1, sampleError.toFixed(4));
+  });
+  const averageError = totalError / rows.length;
+  costHistory.push(averageError);
+
+  costChart.data.labels.push(currentEpoch + 1);
+  costChart.data.datasets[0].data.push(averageError);
+  costChart.update();
+
+  currentEpoch++;
+  drawNetwork();
+  updateValidationResults();
+  renderControls(); // agora atualiza os pontos nos gráficos também
+
+}
+
+function toggleSlowTraining() {
+  slowTraining = !slowTraining;
+  if (slowTraining) {
+    document.getElementById("training-status").innerText = "🐢 Treinando lentamente...";
+    epochInterval = setInterval(() => trainOneEpoch(), 300);
+  } else {
+    clearInterval(epochInterval);
+    document.getElementById("training-status").innerText = "⏸ Treinamento pausado.";
+  }
+}
+
+function updateValidationResults() {
+  const tbody = document.getElementById('results-body');
+  const rows = tbody.querySelectorAll('tr');
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const inputLayerSize = network.layers[0].neurons;
+
+    const inputs = [];
+    for (let i = 0; i < inputLayerSize; i++) {
+      inputs.push(parseFloat(cells[i].innerText));
+    }
+
+    const expected = parseFloat(cells[inputLayerSize].innerText);
+    const output = forward(inputs)[0];
+    const diff = Math.abs(expected - output).toFixed(4);
+
+    cells[inputLayerSize + 1].innerText = output.toFixed(4);
+    cells[inputLayerSize + 2].innerText = diff;
+  });
+}
+
+function updateTrainingStatus(epoch, sample, error) {
+  document.getElementById("training-status").innerText =
+    `📈 Época: ${epoch} | Exemplo: ${sample} | Erro: ${error}`;
+}
+
+function addValidationRow() {
+  validationRowCount++;
+  updateValidationTable();
+  updateValidationResults();
+}
+
+function removeValidationRow() {
+  if (validationRowCount > 1) {
+    validationRowCount--;
+    updateValidationTable();
+    updateValidationResults();
+  } else {
+    alert("A tabela precisa ter pelo menos uma linha.");
+  }
+}
+
+function fillValidationTable(dataset) {
+  validationRowCount = dataset.length;
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+
+  dataset.forEach(row => {
+    let html = '<tr>';
+    row.input.forEach(val => {
+      html += `<td contenteditable="true">${val}</td>`;
+    });
+    html += `<td contenteditable="true">${row.expected[0]}</td><td>-</td><td>-</td>`;
+    html += '</tr>';
+    tbody.innerHTML += html;
+  });
+
+  updateValidationResults();
+}
+
+function activationDerivative(value, type) {
+    switch(type) {
+        case 'sigmoid':
+            let sig = activationFunc(value, 'sigmoid');
+            return sig * (1 - sig);
+        case 'relu':
+            return value > 0 ? 1 : 0;
+        case 'tanh':
+            return 1 - Math.pow(Math.tanh(value), 2);
+        default:
+            return 1;
+    }
+}
+
+function loadDataset(type) {
+  let dataset = [];
+
+  switch (type) {
+    case 'xor':
+      dataset = [
+        { input: [0, 0], expected: [0] },
+        { input: [0, 1], expected: [1] },
+        { input: [1, 0], expected: [1] },
+        { input: [1, 1], expected: [0] },
+      ];
+      break;
+
+    case 'xnor':
+      dataset = [
+        { input: [0, 0], expected: [1] },
+        { input: [0, 1], expected: [0] },
+        { input: [1, 0], expected: [0] },
+        { input: [1, 1], expected: [1] },
+      ];
+      break;
+
+    case 'and':
+      dataset = [
+        { input: [0, 0], expected: [0] },
+        { input: [0, 1], expected: [0] },
+        { input: [1, 0], expected: [0] },
+        { input: [1, 1], expected: [1] },
+      ];
+      break;
+
+    case 'or':
+      dataset = [
+        { input: [0, 0], expected: [0] },
+        { input: [0, 1], expected: [1] },
+        { input: [1, 0], expected: [1] },
+        { input: [1, 1], expected: [1] },
+      ];
+      break;
+
+    case 'nor':
+      dataset = [
+        { input: [0, 0], expected: [1] },
+        { input: [0, 1], expected: [0] },
+        { input: [1, 0], expected: [0] },
+        { input: [1, 1], expected: [0] },
+      ];
+      break;
+
+    case 'nand':
+      dataset = [
+        { input: [0, 0], expected: [1] },
+        { input: [0, 1], expected: [1] },
+        { input: [1, 0], expected: [1] },
+        { input: [1, 1], expected: [0] },
+      ];
+      break;
+
+    case 'majority':
+      dataset = [
+        { input: [0, 0, 0], expected: [0] },
+        { input: [0, 0, 1], expected: [0] },
+        { input: [0, 1, 0], expected: [0] },
+        { input: [1, 0, 0], expected: [0] },
+        { input: [1, 1, 0], expected: [1] },
+        { input: [1, 0, 1], expected: [1] },
+        { input: [0, 1, 1], expected: [1] },
+        { input: [1, 1, 1], expected: [1] },
+      ];
+      break;
+
+    case 'sum':
+      dataset = [
+        { input: [0, 0], expected: [0] },
+        { input: [0, 1], expected: [1] },
+        { input: [1, 0], expected: [1] },
+        { input: [1, 1], expected: [2] },
+      ];
+      break;
+
+    case 'step':
+      dataset = [
+        { input: [0], expected: [0] },
+        { input: [0.3], expected: [0] },
+        { input: [0.5], expected: [1] },
+        { input: [0.8], expected: [1] },
+        { input: [1], expected: [1] },
+      ];
+      break;
+
+    default:
+      alert("Dataset não reconhecido.");
+      return;
+  }
+
+  const inputSize = dataset[0].input.length;
+  if (network.layers[0].neurons !== inputSize) {
+    network.layers[0].neurons = inputSize;
+    initNetwork(true); // ✅ não atualiza tabela aqui
+  }
+
+  // Atualiza a tabela com o dataset
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+  validationRowCount = dataset.length;
+
+  dataset.forEach(row => {
+    let html = '<tr>';
+    row.input.forEach(val => {
+      html += `<td contenteditable="true">${val}</td>`;
+    });
+    html += `<td contenteditable="true">${row.expected[0]}</td><td>-</td><td>-</td></tr>`;
+    tbody.innerHTML += html;
+  });
+
+  updateValidationResults();
+}
+
+
+function trainNetwork(epochs = 5000, learningRate = 0.5) {
+    const tbody = document.getElementById('results-body');
+    const rows = tbody.querySelectorAll('tr');
+    const trainingData = [];
+
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const inputLayerSize = network.layers[0].neurons;
+
+        const inputs = [];
+        for (let i = 0; i < inputLayerSize; i++) {
+            inputs.push(parseFloat(cells[i].innerText));
+        }
+
+        const expected = [parseFloat(cells[inputLayerSize].innerText)];
+        trainingData.push({ inputs, expected });
+    });
+
+    for (let epoch = 0; epoch < epochs; epoch++) {
+        trainingData.forEach(data => {
+            // Forward pass
+            forward(data.inputs);
+
+            // Backward pass
+            let errors = [];
+            for (let l = network.layers.length - 1; l > 0; l--) {
+                let layer = network.layers[l];
+                let prevLayerOutputs = network.layers[l - 1].a || data.inputs;
+                let currentErrors = [];
+
+                for (let n = 0; n < layer.neurons; n++) {
+                    if (l === network.layers.length - 1) {
+                        // Output layer error
+                        currentErrors[n] = (data.expected[n] - layer.a[n]) * activationDerivative(layer.z[n], layer.activation);
+                    } else {
+                        // Hidden layer error
+                        let sum = 0;
+                        for (let k = 0; k < network.layers[l + 1].neurons; k++) {
+                            sum += errors[k] * network.weights[l][k][n];
+                        }
+                        currentErrors[n] = sum * activationDerivative(layer.z[n], layer.activation);
+                    }
+
+                    // Atualiza bias
+                    network.biases[l - 1][n] += learningRate * currentErrors[n];
+
+                    // Atualiza pesos
+                    for (let p = 0; p < prevLayerOutputs.length; p++) {
+                        network.weights[l - 1][n][p] += learningRate * currentErrors[n] * prevLayerOutputs[p];
+                    }
+                }
+                errors = currentErrors;
+            }
+        });
+    }
+
+    drawNetwork(); // atualiza visualmente após o treinamento
+    updateValidationResults(); // atualiza a validação após treinamento
+}
+
+function toggleDarkMode() {
+  document.body.classList.toggle('dark');
+}
+
+function exportNetwork() {
+  const blob = new Blob([JSON.stringify(network)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'rede_neural.json';
+  link.click();
+}
+
+function importNetwork(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    network = JSON.parse(reader.result);
+    initNetwork();
+  };
+  reader.readAsText(file);
+}
+    
+function setupCostChart() {
+  const ctx = document.getElementById('costChart').getContext('2d');
+  costChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Erro Médio',
+        data: [],
+        borderColor: 'blue',
+        backgroundColor: 'rgba(173,216,230,0.3)',
+        tension: 0.2,
+      }]
+    },
+    options: {
+      scales: {
+        x: {
+          title: { display: true, text: 'Época' }
+        },
+        y: {
+          title: { display: true, text: 'Erro Médio' },
+          min: 0
+        }
+      }
+    }
+  });
+}
+
+initNetwork();
+// Chame essa função no final do treinamento ou sempre que a rede atualizar:
+updateValidationResults();
+
+const canvas = document.getElementById('networkCanvas');
+const tooltip = document.getElementById('tooltip');
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  let found = null;
+
+  for (const obj of interactions) {
+    if (obj.type === "neuron") {
+      const dx = mouseX - obj.x;
+      const dy = mouseY - obj.y;
+      if (Math.sqrt(dx*dx + dy*dy) < obj.radius) {
+        found = `🧠 Neurônio\\nz=${obj.z?.toFixed(2)}\\na=${obj.a?.toFixed(2)}\\nb=${obj.bias?.toFixed(2)}`;
+        break;
+      }
+    }
+    if (obj.type === "weight") {
+      // distância de ponto à reta (simplificado)
+      const dist = Math.abs((obj.y2 - obj.y1)*mouseX - (obj.x2 - obj.x1)*mouseY + obj.x2*obj.y1 - obj.y2*obj.x1) /
+                   Math.sqrt(Math.pow(obj.y2 - obj.y1, 2) + Math.pow(obj.x2 - obj.x1, 2));
+      if (dist < 5) {
+        found = `🔗 Peso: ${obj.weight.toFixed(2)}`;
+        break;
+      }
+    }
+  }
+
+  if (found) {
+    tooltip.style.left = e.pageX + 10 + "px";
+    tooltip.style.top = e.pageY + 10 + "px";
+    tooltip.style.display = "block";
+    tooltip.innerText = found;
+  } else {
+    tooltip.style.display = "none";
+  }
+});
+
+</script>
+</body>
+</html>
